@@ -8,14 +8,14 @@ when defined(windows):
 
 type
     ObjectShm*[T] = object
-        name*    : string
-        data*    : ptr T
-        size*    : int
-        isOwner* : bool
+        name*        : string
+        data*        : ptr T
+        size*        : int
+        isOwner*     : bool
         when defined(posix):
             memfile* : Memfile
         elif defined(windows):
-            handle* : Handle
+            handle*  : Handle
 
 when defined(windows):
     const
@@ -103,20 +103,21 @@ proc `=destroy`*[T](self : var ObjectShm[T]) =
 proc createObjectShm*[T](name : string) : ObjectShm[T] =
     when not T.isStaticType:
         raise newException(ValueError, "T must be a static type for ObjectShm")
-    
+    let size = sizeof(T)
+
     when defined(windows):
-        let (handle, mem) = createSharedMemory(name, sizeof(T))
+        let (handle, mem) = createSharedMemory(name, size)
         result.data = cast[ptr T](mem)
         result.handle = handle
     else:
         let filename = "/dev/shm/" & name
         if fileExists(filename): removeFile(filename)
-        result.memfile = memfiles.open(filename, fmReadWrite, newFileSize = sizeof(T))
+        result.memfile = memfiles.open(filename, fmReadWrite, newFileSize = size)
         result.data = cast[ptr T](result.memfile.mem)
     
-    result.name = name
-    result.size = sizeof(T)
-    result.data[] = default(T)
+    result.name    = name
+    result.size    = size
+    result.data[]  = default(T)
     result.isOwner = true
 
 proc openObjectShm*[T](name : string) : ObjectShm[T] =
@@ -133,8 +134,8 @@ proc openObjectShm*[T](name : string) : ObjectShm[T] =
         result.memfile = memfiles.open(filename = filename, mode = fmReadWrite, mappedSize = sizeof(T))
         result.data = cast[ptr T](result.memfile.mem)
     
-    result.name = name
-    result.size = sizeof(T)
+    result.name    = name
+    result.size    = sizeof(T)
     result.isOwner = false
 
 proc get*[T](self : ObjectShm[T]) : var T =
@@ -143,18 +144,19 @@ proc get*[T](self : ObjectShm[T]) : var T =
 when isMainModule:
     type
         ABC* = object
-            a* : StaticTable[100, StaticString[32], StaticString[32]]
-            b* : int
+            a* : StaticTable[2, StaticString[10], StaticString[10]]
     
     import tables, sequtils
     var
         writer = createObjectShm[ABC]("data")
-        writerLookupTable = initTable[StaticString[32], int]()
+        writerLookupTable = initTable[StaticString[10], int]()
         reader = openObjectShm[ABC]("data")
-        readerLookupTable = initTable[StaticString[32], int]()
+        readerLookupTable = initTable[StaticString[10], int]()
     echo writer.data[]
-    writer.get().a.add("hello1".toStatic[:32], "world1".toStatic[:32], writerLookupTable)
-    reader.get().a.add("hello2".toStatic[:32], "world2".toStatic[:32], readerLookupTable)
-    reader.get().b = 10
+    writer.get().a.add("hello1".toStatic[:10], "world1".toStatic[:10], writerLookupTable)
+    reader.get().a.add("hello2".toStatic[:10], "world2".toStatic[:10], readerLookupTable)
     echo writer.data[]
     echo reader.data[]
+    echo Table[int, int].sizeof
+    echo Table[StaticString[32], int].sizeof
+    echo cast[array[ABC.sizeof, byte]](reader.get())
