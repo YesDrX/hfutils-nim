@@ -96,7 +96,7 @@ proc `=destroy`*[T](self : var ObjectShm[T]) =
             self.memfile.close()
             self.data = nil
         if self.isOwner:
-            let filename = "/dev/shm/" & writer.name
+            let filename = "/dev/shm/" & self.name
             if fileExists(filename):
                 removeFile(filename)
 
