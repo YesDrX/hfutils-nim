@@ -125,6 +125,12 @@ proc `==`*[N: static int](s1 : StaticString[N], s2 : StaticString[N]) : bool =
             return false
     return true
 
+proc `==`*[N: static int](s1 : StaticString[N], s2 : string) : bool =
+    return $s1 == s2
+
+proc `==`*[N: static int](s1 : string, s2 : StaticString[N]) : bool =
+    return s1 == $s2
+
 proc `%`*[N: static int](s : StaticString[N]) : JsonNode =
     return %($s)
 
