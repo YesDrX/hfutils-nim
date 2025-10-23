@@ -138,6 +138,17 @@ proc openObjectShm*[T](name : string) : ObjectShm[T] =
     result.size    = sizeof(T)
     result.isOwner = false
 
+proc createMemFile*(name : string, size : int) : MemFile =
+    let filename = "/dev/shm/" & name
+    if fileExists(filename): removeFile(filename)
+    if not dirExists(parentDir(filename)): createDir(parentDir(filename))
+    result = memfiles.open(filename, fmReadWrite, newFileSize = size)
+
+proc openMemFile*(name : string, size : int) : MemFile =
+    let filename = "/dev/shm/" & name
+    if not fileExists(filename): raise newException(ValueError, "File " & filename & " does not exist")
+    result = memfiles.open(filename = filename, mode = fmReadWrite, mappedSize = size)
+
 proc get*[T](self : ObjectShm[T]) : var T =
     return self.data[]
 
