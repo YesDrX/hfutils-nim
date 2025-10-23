@@ -10,3 +10,4 @@ srcDir        = "src"
 # Dependencies
 
 requires "nim >= 2.2.4"
+# requires "supersnappy >= 2.1.3"

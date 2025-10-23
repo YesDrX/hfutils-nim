@@ -1,5 +1,4 @@
 import std/[atomics, tables, typeinfo, macros, strformat, hashes, sequtils, json]
-
 export atomics, tables, typeinfo, macros, strformat, hashes, sequtils
 
 # static types
@@ -19,10 +18,14 @@ type
         len*                    : int = 0
         writeLock*              : Atomic[int]
 
+    StaticJSON*[N: static int] = object
+        data*       : StaticString[N]
+        kind*       : JsonNodeKind
+
 # utils
 when defined(windows):
   proc mmPause() {.importc: "_mm_pause", header: "immintrin.h".}
-elif defined(poisx):
+else:
   proc mmPause() {.importc: "_mm_pause", header: "xmmintrin.h".}
 
 template debugStaticType*(body : untyped) =
@@ -284,6 +287,71 @@ iterator values*[N: static int, K, V](t : StaticTable[N, K, V]) : var V =
     for i in 0 ..< t.len:
         yield t.valuessData[i]
 
+## json
+proc toStatic*[N : static int](j : JsonNode) : StaticJSON[N] =
+    result.kind = j.kind
+
+    let serialized = $j
+    if serialized.len > N:
+        raise newException(ValueError, fmt"Json string is too long. Maximum length is {N}. Actual length is {serialized.len}.")
+    else:
+        result.data = serialized.toStatic[:N]
+
+proc `%`*[N: static int](s : StaticJSON[N]) : JsonNode =
+    if s.data.len == 0:
+        return newJNull()
+    elif s.kind == JString:
+        return %($s.data)
+    else:
+        return s.data.`$`.parseJson
+
+proc `$`*[N: static int](s : StaticJSON[N]) : string =
+    return $s.data
+
+proc `[]`*[N: static int](s : StaticJSON[N], idx : int) : JsonNode =
+    assert s.kind == JArray, "StaticJSON is not an array, but is a " & $s.kind
+    let jsonValue = %s
+    if idx < 0 or idx >= jsonValue.len:
+        raise newException(ValueError, fmt"Index {idx} is out of range 0..{jsonValue.len - 1}")
+    return jsonValue[idx]
+
+proc `[]`*[N: static int](s : StaticJSON[N], key : string) : JsonNode =
+    assert s.kind == JObject, "StaticJSON is not an object, but is a " & $s.kind
+    let jsonValue = %s
+    if not jsonValue.hasKey(key):
+        raise newException(ValueError, fmt"Key {key} does not exist in StaticJSON")
+    return jsonValue[key]
+
+proc `[]=`*[N: static int](s : var StaticJSON[N], key : string, val : JsonNode) =
+    assert s.kind == JObject, "StaticJSON is not an object, but is a " & $s.kind
+    var jsonValue = %s
+    jsonValue[key] = val
+    s.data = jsonValue.toStatic[:N].data
+
+iterator pairs*[N: static int](s : StaticJSON[N]) : (string, JsonNode) =
+    assert s.kind == JObject, "StaticJSON is not an object, but is a " & $s.kind
+    let jsonValue = %s
+    for key, val in jsonValue.pairs:
+        yield (key, val)
+
+iterator keys*[N: static int](s : StaticJSON[N]) : string =
+    assert s.kind == JObject, "StaticJSON is not an object, but is a " & $s.kind
+    let jsonValue = %s
+    for key in jsonValue.keys:
+        yield key
+
+iterator values*[N: static int](s : StaticJSON[N]) : JsonNode =
+    assert s.kind == JObject, "StaticJSON is not an object, but is a " & $s.kind
+    let jsonValue = %s
+    for val in jsonValue.values:
+        yield val
+
+iterator items*[N: static int](s : StaticJSON[N]) : JsonNode =
+    assert s.kind == JArray, "StaticJSON is not an array, but is a " & $s.kind
+    let jsonValue = %s
+    for val in jsonValue.items:
+        yield val
+
 ###
 proc staticSizeOfStaticTable*[N: static int, K, V](t : typedesc[StaticTable[N, K, V]]) : int {.compileTime.} =
     return sizeof(t) - sizeof(Table[K, int])
@@ -296,17 +364,34 @@ proc staticSizeOf*(t : typedesc) : int {.compileTime.} =
 
 ###
 when isMainModule:
-    var
-        x : StaticTable[200, StaticString[32], StaticString[64]]
-        lookupTable : Table[StaticString[32], int] = initTable[StaticString[32], int]()
-    x.add("foo".toStatic[:32], "bar".toStatic[:64], lookupTable)
-    x.add("foo".toStatic[:32], "baz".toStatic[:64], lookupTable)
-    x.add("foo".toStatic[:32], "baz".toStatic[:64], lookupTable)
-    for i in 0 ..< 100:
-        x.add(i.`$`.toStatic[:32], i.`$`.toStatic[:64], lookupTable)
+    # var
+    #     x : StaticTable[200, StaticString[32], StaticString[64]]
+    #     lookupTable : Table[StaticString[32], int] = initTable[StaticString[32], int]()
+    # x.add("foo".toStatic[:32], "bar".toStatic[:64], lookupTable)
+    # x.add("foo".toStatic[:32], "baz".toStatic[:64], lookupTable)
+    # x.add("foo".toStatic[:32], "baz".toStatic[:64], lookupTable)
+    # for i in 0 ..< 100:
+    #     x.add(i.`$`.toStatic[:32], i.`$`.toStatic[:64], lookupTable)
 
-    echo $x
-    echo x.contains("foo".toStatic[:32], lookupTable)
-    echo %x
+    # echo $x
+    # echo x.contains("foo".toStatic[:32], lookupTable)
+    # echo %x
 
-    echo x.typeof.staticSizeOf
+    # echo x.typeof.staticSizeOf
+    var data = """
+        {
+            "name": "John Doe",
+            "age": 30,
+            "address": {
+                "street": "123 Main St",
+                "city": "Anytown",
+                "state": "CA"
+            }
+        }
+    """.parseJson.toStatic[:128]
+    echo data.typeof
+    echo data["name"]
+    data["name"] = %"John Smith"
+    echo data
+    for key, val in data.pairs:
+        echo key, ": ", val
