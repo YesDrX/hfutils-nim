@@ -151,15 +151,15 @@ proc toStatic*[N: static int, T](s : openArray[T]) : StaticSeq[N, T] =
 
 proc capacity*[N: static int, T](s : var StaticSeq) : int {.inline.} = N
 
-proc `[]`*[N: static int, T](s : StaticSeq[N, T], i : int) : T {.inline.} =
-    if i >= s.len:
+proc `[]`*[N: static int, T](s : StaticSeq[N, T], i : int) : ptr T {.inline.} =
+    if i < 0 or i >= s.len:
         raise newException(ValueError, fmt"Index {i} is out of range")
-    return s.data[i]
+    return s.data[i].addr
 
-proc `[]=`*[N: static int, T](s : var StaticSeq[N, T], i : int, val : T) {.inline.} =
+proc `[]=`*[N: static int, T](s : var StaticSeq[N, T], i : int, val : T) =
     s.writeLock.acquire()
     defer: s.writeLock.release()
-    if i >= s.len:
+    if i < 0 or i >= s.len:
         raise newException(ValueError, fmt"Index {i} is out of range")
     s.data[i] = val
 
@@ -170,11 +170,6 @@ proc add*[N: static int, T](s : var StaticSeq[N, T], val : T) =
         raise newException(ValueError, fmt"StaticSeq is full")
     s.data[s.len] = val
     s.len += 1
-
-proc getPointer*[N: static int, T](s : StaticSeq[N, T], i : int) : ptr T {.inline.} =
-    if i >= s.len:
-        raise newException(ValueError, fmt"Index {i} is out of range")
-    return addr s.data[i]
 
 proc `%`*[N: static int, T](s : StaticSeq[N, T]) : JsonNode =
     result = newJArray()
@@ -211,13 +206,13 @@ proc getIndex*[N: static int, K, V](t : StaticTable[N, K, V], key : K, lookupTab
             return i
     raise newException(KeyError, fmt"Key {key} not found in table")
 
-proc get*[N: static int, K, V](t : StaticTable[N, K, V], key : K, lookupTable : var Table[K, int]) : var V =
+proc get*[N: static int, K, V](t : StaticTable[N, K, V], key : K, lookupTable : var Table[K, int]) : ptr V =
     if lookupTable.hasKey(key):
-        return t.valuesData[lookupTable[key]]
+        return t.valuesData[lookupTable[key]].addr
     for i in 0 ..< t.len:
         if t.keysData[i] == key:
             lookupTable[key] = i
-            return t.valuesData[i]
+            return t.valuesData[i].addr
     raise newException(KeyError, fmt"Key {key} not found in table")
 
 proc getOrDefault*[N: static int, K, V](t : StaticTable[N, K, V], key : K, default : V, lookupTable : var Table[K, int]) : V =
@@ -256,10 +251,6 @@ proc add*[N: static int, K, V](t : var StaticTable[N, K, V], key : K, val : V, l
     t.len += 1
     lookupTable[key] = t.len - 1
 
-proc getPointer*[N: static int, K, V](t : StaticTable[N, K, V], key : K, lookupTable : var Table[K, int]) : ptr V =
-    let index = getIndex(t, key, lookupTable)
-    return addr t.valuesData[index]
-
 proc `$`*[N: static int, K, V](t : StaticTable[N, K, V]) : string =
     result = "{"
     for i in 0 ..< t.len:
@@ -275,17 +266,17 @@ proc `%`*[N: static int, K, V](t : StaticTable[N, K, V]) : JsonNode =
     for i in 0 ..< t.len:
         result[$t.keysData[i]] = %*(t.valuesData[i])
 
-iterator pairs*[N: static int, K, V](t : StaticTable[N, K, V]) : (K, var V) =
+iterator pairs*[N: static int, K, V](t : StaticTable[N, K, V]) : (K, ptr V) =
     for i in 0 ..< t.len:
-        yield (t.keysData[i], t.valuesData[i])
+        yield (t.keysData[i], t.valuesData[i].addr)
 
 iterator keys*[N: static int, K, V](t : StaticTable[N, K, V]) : K =
     for i in 0 ..< t.len:
         yield t.keysData[i]
 
-iterator values*[N: static int, K, V](t : StaticTable[N, K, V]) : var V =
+iterator values*[N: static int, K, V](t : StaticTable[N, K, V]) : ptr V =
     for i in 0 ..< t.len:
-        yield t.valuessData[i]
+        yield t.valuessData[i].addr
 
 ## json
 proc toStatic*[N : static int](j : JsonNode) : StaticJSON[N] =
@@ -351,16 +342,6 @@ iterator items*[N: static int](s : StaticJSON[N]) : JsonNode =
     let jsonValue = %s
     for val in jsonValue.items:
         yield val
-
-###
-proc staticSizeOfStaticTable*[N: static int, K, V](t : typedesc[StaticTable[N, K, V]]) : int {.compileTime.} =
-    return sizeof(t) - sizeof(Table[K, int])
-
-proc staticSizeOf*(t : typedesc) : int {.compileTime.} =
-    when t is StaticTable:
-        return staticSizeOfStaticTable(t)
-    else:
-        return sizeof(t)
 
 ###
 when isMainModule:

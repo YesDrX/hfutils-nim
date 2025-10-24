@@ -1,6 +1,6 @@
 # Package
 
-version       = "0.1.1"
+version       = "0.2.0"
 author        = "Yes DrX"
 description   = "a collection of utils"
 license       = "MIT"
@@ -10,4 +10,3 @@ srcDir        = "src"
 # Dependencies
 
 requires "nim >= 2.2.4"
-# requires "supersnappy >= 2.1.3"

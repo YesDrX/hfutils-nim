@@ -1,4 +1,4 @@
-import std/[options, atomics]
+import std/[atomics]
 
 type
   RingBuffer*[N: static int, T] = object
