@@ -31,11 +31,11 @@ macro isObjectVariant*(v: typed): bool =
         ident("false")
 
 ##########################
-proc consumeWhitespace(s: string, i: var int) =
+proc consumeWhitespace*(s: string, i: var int) =
     while i < s.len and s[i] in WHITE_SPACES:
         inc i
     
-proc consumeChar(s: string, i: var int, c: char) =
+proc consumeChar*(s: string, i: var int, c: char) =
     consumeWhitespace(s, i)
     if i >= s.len:
         raise newException(ValueError, "Expected " & c & " but end reached.")
@@ -45,7 +45,7 @@ proc consumeChar(s: string, i: var int, c: char) =
     else:
         raise newException(ValueError, "Expected " & c & " but got " & s[i] & " instead.")
 
-proc consumeSymbol(s: string, i: var int): string =
+proc consumeSymbol*(s: string, i: var int): string =
     consumeWhitespace(s, i)
     let j = i
     while i < s.len:
@@ -147,6 +147,9 @@ proc parseAsStr(s : string, i : var int, forSkipValue : bool = false) : string =
     parseNull(s, i, string)
 
     let j = i
+    if i == s.len:
+        raise newException(ValueError, "String expected but end reached.")
+    
     if s[i] != '"':
         raise newException(ValueError, "String expected.")
     inc i
@@ -309,7 +312,8 @@ proc parseAsObject[T](s : string, i : var int, t : typedesc[T]) : T =
                 v = jsonAs[type(v)](s, i, type(v))
                 keyIsValid = true
         if not keyIsValid:
-            echo "[JSON] Unknown key: `" & key & "` for type `" & $t & "`"
+            when not defined(release):
+                echo "[JSON] Unknown key: `" & key & "` for type `" & $t & "`"
             skipValue(s, i)
         consumeWhitespace(s, i)
         if i < s.len and s[i] == ',':
@@ -331,6 +335,9 @@ proc parseAsRefObject[T](s : string, i : var int, t : typedesc[ref T]) : ref T =
     result[] = parseAsObject(s, i, T)
 
 proc parseAsJson(s : string, i : var int) : JsonNode =
+    if i == s.len:
+        return newJNull()
+
     if i < s.len and s[i] == '{':
         result = newJObject()
         consumeChar(s, i, '{')
@@ -698,16 +705,21 @@ proc jsonDumpStaticSeq[N, T](s : StaticSeq[N, T]) : string =
 proc jsonDumpDistinct[T](t : T) : string =
     return jsonDump(distinctBase(T)(t))
 
-template addCustomJsonDumpHook[T](t: T, result: var string) =
+template addCustomJsonDumpHook[T](t: T) =
     mixin customJsonDumpHook
-    customJsonDumpHook(t, result)
+    customJsonDumpHook(t)
 
 proc jsonDump*[T](t : T) : string =
-    when compiles(addCustomJsonDumpHook(t, result)):
-        addCustomJsonDumpHook(t, result)
+    when compiles(addCustomJsonDumpHook(t)):
+        addCustomJsonDumpHook(t)
     
-    when T is bool or T is SomeSignedInt or T is SomeUnsignedInt or T is SomeFloat:
+    when T is bool or T is SomeSignedInt or T is SomeUnsignedInt:
         return $t
+    elif T is SomeFloat:
+        if t.isNan:
+            return "null"
+        else:
+            return $t
     elif T is char:
         return jsonDumpChar(t)
     elif T is string:
@@ -744,9 +756,21 @@ proc yamlDump*[T](t : T, indent : int = 0) : string
 
 type ComplexYamlField = seq | array | set | StaticSeq | object | ref object | SomeTable | StaticTable
 
+template addCustomIsComplexYamlFieldHook[T](t: typedesc[T]): untyped =
+    mixin customIsComplexYamlFieldHook
+    customIsComplexYamlFieldHook(t)
+
+proc isComplexYamlField[T](t : typedesc[T]) : bool =
+    when compiles(addCustomIsComplexYamlFieldHook(t)):
+        addCustomIsComplexYamlFieldHook(t)
+    when T is ComplexYamlField:
+        return true
+    else:
+        return false
+
 proc yamlDumpArray[T](s : openArray[T], indent : int) : string =
     let indention = "    ".repeat(indent)
-    when T is ComplexYamlField:
+    when T.isComplexYamlField:
         for idx, item in s.pairs:
             result = result & indention & "-\n" & yamlDump(item, indent + 1)
             if idx < s.len - 1: result = result & "\n"
@@ -759,7 +783,7 @@ template yamlDumpKV(s : untyped, pairsIterator: untyped, indent : int) : untyped
     var anyKV : bool = false
     for k, v in s.pairsIterator:
         result = result & indention & yamlDump(k, indent) & ":"
-        when type(v) is ComplexYamlField:
+        when type(v).isComplexYamlField:
             result = result & "\n" & yamlDump(v, indent + 1) & "\n"
         else:
             result = result & " " & yamlDump(v, 0) & "\n"
@@ -767,7 +791,14 @@ template yamlDumpKV(s : untyped, pairsIterator: untyped, indent : int) : untyped
     if anyKV: # remove last \n
         result = result[0 ..< result.len - 1]
 
+template addCustomYamlDumpHook[T](t: T) =
+    mixin customYamlDumpHook
+    customYamlDumpHook(t)
+
 proc yamlDump*[T](t : T, indent : int = 0) : string =
+    when compiles(addCustomYamlDumpHook(t)):
+        addCustomYamlDumpHook(t)
+    
     let indention = "    ".repeat(indent)
 
     when T is bool or T is SomeSignedInt or T is SomeUnsignedInt or T is SomeFloat:
