@@ -147,19 +147,19 @@ proc toStatic*[N: static int, T](s : openArray[T]) : StaticSeq[N, T] =
             echo "[Static Type] input seq is longer than ", N, " elements : ", s
     if s.len > 0:
         copyMem(addr result.data[0], addr s[0], min(s.len, N) * sizeof(T))
-    result.length.store(min(s.len, N))
+    result.len = min(s.len, N)
 
 proc capacity*[N: static int, T](s : var StaticSeq) : int {.inline.} = N
 
 proc `[]`*[N: static int, T](s : StaticSeq[N, T], i : int) : ptr T {.inline.} =
-    if i < 0 or i >= s.len:
+    if i >= s.len:
         raise newException(ValueError, fmt"Index {i} is out of range")
     return s.data[i].addr
 
-proc `[]=`*[N: static int, T](s : var StaticSeq[N, T], i : int, val : T) =
+proc `[]=`*[N: static int, T](s : var StaticSeq[N, T], i : int, val : T) {.inline.} =
     s.writeLock.acquire()
     defer: s.writeLock.release()
-    if i < 0 or i >= s.len:
+    if i >= s.len:
         raise newException(ValueError, fmt"Index {i} is out of range")
     s.data[i] = val
 
@@ -171,14 +171,19 @@ proc add*[N: static int, T](s : var StaticSeq[N, T], val : T) =
     s.data[s.len] = val
     s.len += 1
 
+proc getPointer*[N: static int, T](s : StaticSeq[N, T], i : int) : ptr T {.inline.} =
+    if i >= s.len:
+        raise newException(ValueError, fmt"Index {i} is out of range")
+    return addr s.data[i]
+
 proc `%`*[N: static int, T](s : StaticSeq[N, T]) : JsonNode =
     result = newJArray()
     for i in 0 ..< s.len:
         result.add(%*s.data[i])
 
-iterator items*[N: static int, T](s : StaticSeq[N, T]) : var T =
+iterator items*[N: static int, T](s : StaticSeq[N, T]) : ptr T =
     for i in 0 ..< s.len:
-        yield s.data[i]
+        yield s.data[i].addr
 
 ### table
 proc capacity*[N: static int, K, V](t : StaticTable[N, K, V]) : int {.inline.} = N
@@ -206,13 +211,13 @@ proc getIndex*[N: static int, K, V](t : StaticTable[N, K, V], key : K, lookupTab
             return i
     raise newException(KeyError, fmt"Key {key} not found in table")
 
-proc get*[N: static int, K, V](t : StaticTable[N, K, V], key : K, lookupTable : var Table[K, int]) : ptr V =
+proc get*[N: static int, K, V](t : StaticTable[N, K, V], key : K, lookupTable : var Table[K, int]) : V =
     if lookupTable.hasKey(key):
-        return t.valuesData[lookupTable[key]].addr
+        return t.valuesData[lookupTable[key]][]
     for i in 0 ..< t.len:
-        if t.keysData[i] == key:
+        if t.keysData[i][] == key:
             lookupTable[key] = i
-            return t.valuesData[i].addr
+            return t.valuesData[i][]
     raise newException(KeyError, fmt"Key {key} not found in table")
 
 proc getOrDefault*[N: static int, K, V](t : StaticTable[N, K, V], key : K, default : V, lookupTable : var Table[K, int]) : V =
@@ -228,8 +233,8 @@ proc add*[N: static int, K, V](t : var StaticTable[N, K, V], key : K, val : V, s
     t.writeLock.acquire()
     defer : t.writeLock.release()
     for i in 0 ..< t.len:
-        if t.keysData[i] == key:
-            t.valuesData[i] = val
+        if t.keysData[i][] == key:
+            t.valuesData[i][] = val
             return
     t.keysData.add(key)
     t.valuesData.add(val)
@@ -251,6 +256,10 @@ proc add*[N: static int, K, V](t : var StaticTable[N, K, V], key : K, val : V, l
     t.len += 1
     lookupTable[key] = t.len - 1
 
+proc getPointer*[N: static int, K, V](t : StaticTable[N, K, V], key : K, lookupTable : var Table[K, int]) : ptr V =
+    let index = getIndex(t, key, lookupTable)
+    return addr t.valuesData[index]
+
 proc `$`*[N: static int, K, V](t : StaticTable[N, K, V]) : string =
     result = "{"
     for i in 0 ..< t.len:
@@ -268,7 +277,7 @@ proc `%`*[N: static int, K, V](t : StaticTable[N, K, V]) : JsonNode =
 
 iterator pairs*[N: static int, K, V](t : StaticTable[N, K, V]) : (K, ptr V) =
     for i in 0 ..< t.len:
-        yield (t.keysData[i], t.valuesData[i].addr)
+        yield (t.keysData[i][], t.valuesData.data[i].addr)
 
 iterator keys*[N: static int, K, V](t : StaticTable[N, K, V]) : K =
     for i in 0 ..< t.len:
