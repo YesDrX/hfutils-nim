@@ -222,11 +222,11 @@ proc get*[N: static int, K, V](t : StaticTable[N, K, V], key : K, lookupTable : 
 
 proc getOrDefault*[N: static int, K, V](t : StaticTable[N, K, V], key : K, default : V, lookupTable : var Table[K, int]) : V =
     if lookupTable.contains(key):
-        return t.valuesData[lookupTable[key]]
+        return t.valuesData[lookupTable[key]][]
     for i in 0 ..< t.len:
-        if t.keysData[i] == key:
+        if t.keysData[i][] == key:
             lookupTable[key] = i
-            return t.valuesData[i]
+            return t.valuesData[i][]
     return default
 
 proc add*[N: static int, K, V](t : var StaticTable[N, K, V], key : K, val : V, skipLookupTable : bool) =
@@ -247,9 +247,9 @@ proc add*[N: static int, K, V](t : var StaticTable[N, K, V], key : K, val : V, l
         t.valuesData[lookupTable[key]] = val
         return
     for i in 0 ..< t.len:
-        if t.keysData[i] == key:
+        if t.keysData[i][] == key:
             lookupTable[key] = i
-            t.valuesData[i] = val
+            t.valuesData[i][] = val
             return
     t.keysData.add(key)
     t.valuesData.add(val)
@@ -265,15 +265,15 @@ proc `$`*[N: static int, K, V](t : StaticTable[N, K, V]) : string =
     for i in 0 ..< t.len:
         if i > 0:
             result.add(", ")
-        result.add($t.keysData[i])
+        result.add($(t.keysData[i][]))
         result.add(": ")
-        result.add($t.valuesData[i])
+        result.add($(t.valuesData[i][]))
     result.add("}")
 
 proc `%`*[N: static int, K, V](t : StaticTable[N, K, V]) : JsonNode =
     result = newJObject()
     for i in 0 ..< t.len:
-        result[$t.keysData[i]] = %*(t.valuesData[i])
+        result[$(t.keysData[i][])] = %*(t.valuesData[i][])
 
 iterator pairs*[N: static int, K, V](t : StaticTable[N, K, V]) : (K, ptr V) =
     for i in 0 ..< t.len:
