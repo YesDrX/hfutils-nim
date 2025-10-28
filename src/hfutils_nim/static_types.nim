@@ -306,6 +306,8 @@ proc `%`*[N: static int](s : StaticJSON[N]) : JsonNode =
         return s.data.`$`.parseJson
 
 proc `$`*[N: static int](s : StaticJSON[N]) : string =
+    if s.data.len == 0:
+        return "null"
     return $s.data
 
 proc `[]`*[N: static int](s : StaticJSON[N], idx : int) : JsonNode =
