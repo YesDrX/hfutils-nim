@@ -498,6 +498,8 @@ proc nodeAsInt[T: SomeInteger](n : JsonNode) : T =
             return parsed.int.T
         else:
             raise newException(ValueError, "Invalid integer value: " & $n & " (kind = " & $n.kind & ")")
+    elif n.kind == JNull:
+        return 0.T
     elif n.kind == JString:
         return n.getStr.parseInt.T
     else:
