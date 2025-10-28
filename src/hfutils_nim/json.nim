@@ -121,6 +121,23 @@ proc parseAsUnsignedInt[T](s : string, i : var int, t : typedesc[T]) : T =
     return parseInt(s[j ..< i]).T
 
 proc parseAsFloat[T](s : string, i : var int, t : typedesc[T]) : T =
+    if i == s.len:
+        return NaN.T
+
+    if i + 3 < s.len and
+            s[i+0] == 'n' and
+            s[i+1] == 'u' and
+            s[i+2] == 'l' and
+            s[i+3] == 'l':
+        i += 4
+        return NaN.T
+    
+    if s[i] == '"':
+        let parsedStr = jsonAs(s, i, string)
+        if parsedStr == "" or parsedStr.toLowerAscii() == "nan":
+            i += 1
+            return NaN.T
+
     var parsed : float
     let chars = parseFloat(s, parsed, i)
     if chars == 0:
@@ -148,7 +165,7 @@ proc parseAsStr(s : string, i : var int, forSkipValue : bool = false) : string =
 
     let j = i
     if i == s.len:
-        raise newException(ValueError, "String expected but end reached.")
+        return ""
     
     if s[i] != '"':
         raise newException(ValueError, "String expected.")
@@ -492,6 +509,8 @@ proc nodeAsFloat[T : SomeFloat](n : JsonNode) : T =
     elif n.kind == JInt:
         return n.getInt.T
     elif n.kind == JString:
+        if n.getStr.len == 0 or n.getStr.toLowerAscii == "nan":
+            return NaN.T
         return n.getStr.parseFloat.T
     else:
         raise newException(ValueError, "Invalid float value: " & $n & "(kind = " & $n.kind & ")")
