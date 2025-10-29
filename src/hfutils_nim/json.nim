@@ -95,55 +95,42 @@ proc parseAsBool(s : string, i : var int) : bool =
     else:
         raise newException(ValueError, "Boolean true or false expected.")
 
-proc parseAsSignedInt[T](s : string, i : var int, t : typedesc[T]) : T =
-    let hasSign = s[i] in {'-', '+'}
-    let j = i
-    if hasSign:
-        inc i
-    while i < s.len:
-        if s[i] in {'0'..'9'}:
-            inc i
-        else:
-            break
-    if j == i or (hasSign and i == j + 1):
-        raise newException(ValueError, "Signed number expected.")
-    return parseInt(s[j ..< i]).T
-
-proc parseAsUnsignedInt[T](s : string, i : var int, t : typedesc[T]) : T =
-    let j = i
-    while i < s.len:
-        if s[i] in {'0'..'9'}:
-            inc i
-        else:
-            break
-    if j == i:
-        raise newException(ValueError, "Number expected.")
-    return parseInt(s[j ..< i]).T
-
-proc parseAsFloat[T](s : string, i : var int, t : typedesc[T]) : T =
-    if i == s.len:
-        return NaN.T
-
-    if i + 3 < s.len and
+proc parseAsNumber[T : SomeInteger | SomeFloat](s : string, i : var int, t : typedesc[T]) : T =
+    if i == s.len or (i + 3 < s.len and
             s[i+0] == 'n' and
             s[i+1] == 'u' and
             s[i+2] == 'l' and
-            s[i+3] == 'l':
+            s[i+3] == 'l'):
         i += 4
-        return NaN.T
+        when T is SomeInteger:
+            return 0.T
+        else:
+            return NaN.T
     
     if s[i] == '"':
         let parsedStr = jsonAs(s, i, string)
         if parsedStr == "" or parsedStr.toLowerAscii() == "nan":
             i += 1
-            return NaN.T
-
-    var parsed : float
-    let chars = parseFloat(s, parsed, i)
+            when T is SomeInteger:
+                return 0.T
+            else:
+                return NaN.T
+        else:
+            let parsedFloat = parsedStr.parseFloat
+            when T is SomeInteger:
+                if parsedFloat != parsedFloat.round():
+                    raise newException(ValueError, "Integer expected, but got float: " & $parsedFloat)
+            return parsedFloat.T
+    
+    var parsedFloat: float
+    let chars = parseFloat(s, parsedFloat, i)
     if chars == 0:
-        raise newException(ValueError, "Float expected.")
+        raise newException(ValueError, "Number expected.")
     i += chars
-    return parsed.T
+    when T is SomeInteger:
+        if parsedFloat != parsedFloat.round():
+            raise newException(ValueError, "Integer expected, but got float: " & $parsedFloat)
+    return parsedFloat.T
 
 proc consumeUnicodeEscape(s : string, i : var int, hex_len : int) =
     raise newException(ValueError, "Unicode escape is not implemented yet.")
@@ -426,12 +413,8 @@ proc jsonAs*[T](s: string, i : var int, t : typedesc[T]): T =
     try:
         when T is bool:
             return parseAsBool(s, i)
-        elif T is SomeSignedInt:
-            return parseAsSignedInt(s, i, T)
-        elif T is SomeUnsignedInt:
-            return parseAsUnsignedInt(s, i, T)
-        elif T is SomeFloat:
-            return parseAsFloat(s, i, T)
+        elif T is SomeInteger or T is SomeFloat:
+            return parseAsNumber(s, i, T)
         elif T is string: ## Asicii only for now
             return parseAsStr(s, i)
         elif T is StaticString:
@@ -514,6 +497,8 @@ proc nodeAsFloat[T : SomeFloat](n : JsonNode) : T =
         if n.getStr.len == 0 or n.getStr.toLowerAscii == "nan":
             return NaN.T
         return n.getStr.parseFloat.T
+    elif n.kind == JNull:
+        return NaN.T
     else:
         raise newException(ValueError, "Invalid float value: " & $n & "(kind = " & $n.kind & ")")
 
@@ -824,6 +809,7 @@ proc yamlDump*[T](t : T, indent : int = 0) : string =
 
     when T is bool or T is SomeSignedInt or T is SomeUnsignedInt or T is SomeFloat:
         return indention & $t
+
     elif T is char or T is string or T is StaticString:
         result = t.`$`.escape
         return result[1 ..< result.len - 1]
