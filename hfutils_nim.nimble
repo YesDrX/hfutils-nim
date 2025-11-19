@@ -1,6 +1,6 @@
 # Package
 
-version       = "0.2.9"
+version       = "0.3.0"
 author        = "Yes DrX"
 description   = "a collection of utils"
 license       = "MIT"

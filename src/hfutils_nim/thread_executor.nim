@@ -4,7 +4,7 @@ export os, locks, atomics, times, atomics, cpuinfo, strformat
 
 # Ensure correct memory management for threads
 when not defined(gcAtomicArc):
-    {.error: "Thread executor requires --mm:atomicArc".}
+    {.warn: "Thread executor is a ref object; use atomicArc if executor is passed around threads.".}
 
 type
     TaskStatus* = enum
@@ -43,6 +43,8 @@ type
 # --- Forward Declarations ---
 proc workerLoop[T, R](executor: Executor[T, R]) {.thread.}
 
+proc shutdown*[T, R](executor: Executor[T, R])
+
 # --- Constructor ---
 
 proc newExecutor*[T, R](fn: proc(arg: T): R {.gcsafe.}, numThreads: int = countProcessors(), raiseOnException: bool = false): Executor[T, R] =
@@ -65,6 +67,22 @@ proc newExecutor*[T, R](fn: proc(arg: T): R {.gcsafe.}, numThreads: int = countP
         createThread(result.threads[i], workerLoop[T, R], result)
 
 # --- Public API ---
+proc resetNumThreads*[T, R](executor: Executor[T, R], numThreads: int) =
+    if numThreads != executor.threads.len:
+        shutdown(executor)
+
+        executor.threads = newSeq[Thread[Executor[T, R]]](numThreads)
+        for i in 0 ..< numThreads:
+            createThread(executor.threads[i], workerLoop[T, R], executor)
+        
+        executor.tasks.clear()
+        
+        executor.nextTaskIdx.store(0)
+        executor.tasksCompleted.store(0)
+        
+        initLock(executor.lock)
+        initCond(executor.workAvailable)
+        initCond(executor.batchFinished)
 
 proc submit*[T, R](executor: Executor[T, R], arg: T) =
     let t = Task[T, R](
@@ -179,7 +197,8 @@ proc procArgsToArgType(arg_type_name : string, proc_args : seq[NimNode]): NimNod
             )
             result[0][2][2].add(arg)
 
-macro parallel*(proc_def : untyped): untyped =
+# user can extend parallel pragma using parallelImpl
+proc parallelImpl*(proc_def : Nimnode): Nimnode =
     if proc_def.kind != nnkProcDef:
         raise newException(Exception, "parallel pragma can only be used on a proc definition")
     
@@ -242,6 +261,9 @@ macro parallel*(proc_def : untyped): untyped =
         result.add submit_proc
 
     # echo result.repr
+
+macro parallel*(proc_def : untyped) : untyped =
+    parallelImpl(proc_def)
 
 when isMainModule:
     # --- demo ---
