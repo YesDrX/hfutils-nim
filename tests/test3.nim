@@ -1,6 +1,6 @@
 # async_lock_test.nim
 import std/[atomics, locks, asyncdispatch, os, times, unittest, strutils, strformat]
-import hfutils_nim/asyncLock
+import hfutils_nim/async_lock
 
 # ---------------------------------------------------------------------------
 # 0.  Helper that gives every coroutine a unique name
