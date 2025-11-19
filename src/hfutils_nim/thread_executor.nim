@@ -3,8 +3,8 @@ import std/[os, locks, macros, times, atomics, strformat, cpuinfo]
 export os, locks, atomics, times, atomics, cpuinfo, strformat
 
 # Ensure correct memory management for threads
-when not defined(gcAtomicArc) and not defined(gcOrc):
-    {.error: "Thread executor requires --mm:atomicArc or --mm:orc".}
+when not defined(gcAtomicArc):
+    {.error: "Thread executor requires --mm:atomicArc".}
 
 type
     TaskStatus* = enum
